@@ -1,0 +1,264 @@
+# NAME
+
+Rose::DBx::Role::QueryCannery - Streamline canned query generation
+
+# SYNOPSIS
+
+    package Munge::My::Data;
+
+    use Moo 2;
+
+    # Give ourselves verbosity and logging attributes (optional)
+    with 'MooX::Role::Chatty';
+
+    # Grab the cannery machinery
+    use Rose::DBx::Role::QueryCannery;
+
+    # Set up cannery to create queries using specified Rose::DB
+    # connection info; will automatically try to load rdb_class
+    # and a default canned query class
+    Rose::DBx::Role::QueryCannery->apply(
+      { rdb_class => 'My::RDB::Class',
+        rdb_params => { type => 'my_db', domain => $server } } );
+
+    ...
+
+    $self->verbose(2);
+
+    # Create a canned query
+    my $qry = $self->build_query('SELECT useful, stuff FROM table');
+    foreach my $row ($qry->results) {
+      do_something($row);
+    }
+
+    # Fetch another, or create it if it doesn't exist, with logging
+    # turned off during query execution
+    my $other_qry =
+      $self->get_query('SELECT other, stuff FROM table WHERE param = ?',
+                       { verbose => 0 });
+
+    while ( my($name, $resultset) = 
+              each %{ $other_qry->do_many_queries(\%bind_sets) } ) {
+
+      # This still logs, since we're stil at verbose(2) out here
+      $self->remark("Handling result for bind params $name");
+
+      do_something_else($resultset);
+    }
+
+# DESCRIPTION
+
+Sometimes, when you're writing code that interacts with a database,
+you need to maintain a tight binding between the data in the database
+and the data in your application.  In these cases, an ORM such as
+[Rose::DB::Object](https://metacpan.org/pod/Rose::DB::Object) or [DBIx::Class](https://metacpan.org/pod/DBIx::Class) give you a detailed mapping, at
+the cost of added design and executing overhead.
+
+Often, however, you just need to get the data out of (or into) the
+database, so your code can operate on it.  In this situation, it's
+ueful to minimize the boilerplate needed to get to and from the
+database.  [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose::DBx::CannedQuery) tries to do this for individual
+queries, and [Rose::DBx::CannedQuery::Glycosylated](https://metacpan.org/pod/Rose::DBx::CannedQuery::Glycosylated) abstracts away a
+bit more repetitive code dealing with logging.  But these helpers
+still require a certain amount of work to define the data source,
+connect logging, and so forth.  As you use them you'll probably find
+yourself writing similar (if briefer) boilerplate, especially if you
+use several canned queries in your application.
+
+`Rose::DBx::Role::QueryCannery` is the next step down this path to
+convenience.  It packages up the process of creating several canned
+queries against a common database, so that typically you only need to
+provide the SQL itself for each query.
+
+Depending on your needs, you may find it most helpful to use
+`Rose::DBx::Role::QueryCannery` in either of two ways:
+
+- For more straightforward cases, you can just compose
+[Rose::DBx::Role::QueryCannery](https://metacpan.org/pod/Rose::DBx::Role::QueryCannery) into your application or analytic class.
+You tell `Rose::DBx::Role::QueryCannery` at composition
+time about your data source, and it will set up the cannery
+appropriately.
+- For more complex applications where the cannery might be used in
+different places, or if you find yourself using the same database in
+multiple applications, you can use [Rose::DBx::Role::QueryCannery](https://metacpan.org/pod/Rose::DBx::Role::QueryCannery) as
+the foundation for a reusable database-specific cannery.  Depending on
+your preferences, you might accomplish this by writing a simple
+(non-parameterized) cannery role:
+
+        package My::DB::Cannery;
+
+        use Rose::DBx::Role::QueryCannery;
+        use Moo::Role 2;
+
+        Rose::DBx::Role::QueryCannery->apply(
+          query_class => 'Rose::DBx::CannedQuery::Glycosylated',
+          rdb_class => 'My::RDB',
+          rdb_params => { domain => $ENV{MYDB_TESTING_DOMAIN} || 'production',
+                          type => 'my_db' }
+        );
+
+        # Elsewhere . . . 
+        package My::Analytic::Class;
+        use Moo 2;
+        with 'My::DB::Cannery';
+
+        sub munge_item {
+          my( $self, $item_id, $opts ) = @_;
+          my $qry = $self->get_query('SELECT some, stuff FROM table WHERE item_id = ?');
+
+          foreach my $row ($qry->do_one_query( $item_id )) {
+            next unless validate_result($row->{some}, $item_id);
+            update_summary_stats($row->{stuff});
+          }
+        }
+
+    Alternatively, if you prefer to separate query construction from other
+    code, you can build a factory class that composes
+    [Rose::DBx::Role::QueryCannery](https://metacpan.org/pod/Rose::DBx::Role::QueryCannery) with appropriate parameters:
+
+        package My::DB::CanningFactory;
+
+        use Rose::DBx::Role::QueryCannery;
+        use Moo 2;  # Not Moo::Role
+        use MooX::ClassAttribute;
+
+        # Get connection data from config, set up helper methods, etc.
+        has 'verbose' => ( ... );
+        sub _build_verbose { ... }
+        has 'logger'  => ( ... );
+        sub _build_logger { ... };
+        class_has 'rdb'     => ( ... );
+        sub _build_rdb { ... }
+
+        Rose::DBx::Role::QueryCannery->apply(
+          query_class => 'Rose::DBx::CannedQuery::Glycosylated',
+          rdb => __PACKAGE__->rdb );
+
+        # Elsewhere . . .
+        package My::Analytic::Class;
+        use Moo 2;
+        use My::DB::CanningFactory;
+        use Types::Standard 'InstanceOf';
+
+        has 'cannery' => ( is => 'ro', required => 1, lazy => 1,
+                           isa => InstanceOf['My::DB::CanningFactory'],
+                           builder => '_build_cannery' );
+        sub _build_cannery { 
+          My::DB::CanningFactory->new( verbose => 2,
+                                       logger => My::App::Logger->get_logger );
+        }
+
+
+        sub munge_item {
+          my( $self, $item_id, $opts ) = @_;
+          my $qry = 
+            $self->cannery->get_query('SELECT some, stuff FROM table WHERE item_id = ?');
+
+          foreach my $row ($qry->do_one_query( $item_id )) {
+            next unless validate_result($row->{some}, $item_id);
+            update_summary_stats($row->{stuff});
+          }
+        }
+
+# PARAMETERS
+
+You tell `Rose::DBx::Role::QueryCannery` how to set up the cannery by
+specifying as many of these parameters as you need at composition time
+(using either the ["apply" in MooX::Role::Parameterized](https://metacpan.org/pod/MooX::Role::Parameterized#apply) method or the
+[MooX::Role::Parameterized::With](https://metacpan.org/pod/MooX::Role::Parameterized::With) class):
+
+- query\_class
+
+    This is the class that will actually construct and manage the canned
+    queries. You may specify any class whose query management is
+    compatible with [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose::DBx::CannedQuery).  If you want automatic
+    logging, then the class needs to be compatible with
+    [Rose::DBx::CannedQuery::Glycosylated](https://metacpan.org/pod/Rose::DBx::CannedQuery::Glycosylated).
+
+    If you don't specify this class, and
+    [Rose::DBx::CannedQuery::Glycosylated](https://metacpan.org/pod/Rose::DBx::CannedQuery::Glycosylated) can be loaded, it is used by
+    default.  If not, then [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose::DBx::CannedQuery) is tried.  If that
+    fails, an exception is thrown.
+
+    If the ["query\_class"](#query_class) can respond to both `verbose` and `logger`
+    methods (i.e. is compatible with the logging interface of
+    [Rose::DBx::CannedQuery::Glycosylated](https://metacpan.org/pod/Rose::DBx::CannedQuery::Glycosylated)), then the cannery introspects
+    your class for `verbose` and `logger` values, and uses them to
+    create canned queries.
+
+- rdb
+
+    This is a [Rose::DB](https://metacpan.org/pod/Rose::DB)-derived database handle used to manage the
+    database connection; see [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose::DBx::CannedQuery) for details.  There
+    is no default value.
+
+    As with [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose::DBx::CannedQuery), you may specify either ["rdb"](#rdb) or
+    ["rdb\_class"](#rdb_class) and ["rdb\_params"](#rdb_params) when composing
+    [Rose::DBx::Role::QueryCannery](https://metacpan.org/pod/Rose::DBx::Role::QueryCannery).
+
+- rdb\_class
+
+    This is the name of the [Rose::DB](https://metacpan.org/pod/Rose::DB)-derived class that makes the
+    database connection; see [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose::DBx::CannedQuery) for details.  There
+    is no default value.
+
+- rdb\_params
+
+    This is a hash reference containing the data source information for
+    ["rdb\_class"](#rdb_class); again, see [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose::DBx::CannedQuery) for details.
+    There is no default value.
+
+# METHODS
+
+`Rose::DBx::Role::QueryCannery` injects two methods into your class:
+
+- **build\_query**(_$sql_\[, _\\%opts_\])
+
+    Creates a new canned query using _$sql_ as the SQL, and taking the
+    rest of its defaults from the cannery.  If you want to override any of
+    the defaults for this query only, you may pass in the hash reference
+    _\\%opts_ any of the parameters accepted by the `new` constructor in
+    ["query\_class"](#query_class).
+
+- **get\_query**(_$sql_\[, _\\%opts_\])
+
+    Does the same thing as ["build\_query"](#build_query), but calls the `new_or_cached`
+    constructor in ["query\_class"](#query_class), so you can set up and retrieve
+    cached queries as well.
+
+## EXPORT
+
+None.
+
+# SEE ALSO
+
+[Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose::DBx::CannedQuery), [Rose::DBx::CannedQuery::Glycosylated](https://metacpan.org/pod/Rose::DBx::CannedQuery::Glycosylated) for
+canned queries.
+
+[MooX::Role::Chatty](https://metacpan.org/pod/MooX::Role::Chatty) for a simple way to set your class up with logging.
+
+[Rose::DBx::MoreConfig](https://metacpan.org/pod/Rose::DBx::MoreConfig) or [Rose::DB](https://metacpan.org/pod/Rose::DB) for a database connection
+class.
+
+# DIAGNOSTICS
+
+Any message produced by an included package.
+
+# BUGS AND CAVEATS
+
+Are there, for certain, but have yet to be cataloged.
+
+# VERSION
+
+version 1.00
+
+# AUTHOR
+
+Charles Bailey <cbail@cpan.org>
+
+# COPYRIGHT AND LICENSE
+
+Copyright (C) 2015 by Charles Bailey
+
+This software may be used under the terms of the Artistic License or
+the GNU General Public License, as the user prefers.
