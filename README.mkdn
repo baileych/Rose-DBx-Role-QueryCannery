@@ -13,13 +13,22 @@ Rose::DBx::Role::QueryCannery - Streamline canned query generation
 
     # Grab the cannery machinery
     use Rose::DBx::Role::QueryCannery;
+    use MooseX::Role::Parameterized::With; # override with to include parameterized roles and parameters
 
-    # Set up cannery to create queries using specified Rose::DB
-    # connection info; will automatically try to load rdb_class
-    # and a default canned query class
-    Rose::DBx::Role::QueryCannery->apply(
-      { rdb_class => 'My::RDB::Class',
-        rdb_params => { type => 'my_db', domain => $server } } );
+    with
+      # Give ourselves verbosity and logging attributes (optional) 
+      'MooX::Role::Chatty',
+      # Set up cannery to create queries using specified Rose::DB
+      # connection info; will automatically try to load rdb_class
+      # and a default canned query class
+      'Rose::DBx::Role::QueryCannery' => {
+      rdb_class => 'My::RDB::Class',
+      rdb_params => { type => 'my_db', domain => $server },
+    };
+    # this is the old way
+    # Rose::DBx::Role::QueryCannery->apply_roles_to_target(
+    #  { rdb_class => 'My::RDB::Class',
+    #    rdb_params => { type => 'my_db', domain => $server } } );
 
     ...
 
@@ -51,14 +60,14 @@ Rose::DBx::Role::QueryCannery - Streamline canned query generation
 Sometimes, when you're writing code that interacts with a database,
 you need to maintain a tight binding between the data in the database
 and the data in your application.  In these cases, an ORM such as
-[Rose::DB::Object](https://metacpan.org/pod/Rose::DB::Object) or [DBIx::Class](https://metacpan.org/pod/DBIx::Class) give you a detailed mapping, at
+[Rose::DB::Object](https://metacpan.org/pod/Rose%3A%3ADB%3A%3AObject) or [DBIx::Class](https://metacpan.org/pod/DBIx%3A%3AClass) give you a detailed mapping, at
 the cost of added design and executing overhead.
 
 Often, however, you just need to get the data out of (or into) the
 database, so your code can operate on it.  In this situation, it's
 ueful to minimize the boilerplate needed to get to and from the
-database.  [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose::DBx::CannedQuery) tries to do this for individual
-queries, and [Rose::DBx::CannedQuery::Glycosylated](https://metacpan.org/pod/Rose::DBx::CannedQuery::Glycosylated) abstracts away a
+database.  [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose%3A%3ADBx%3A%3ACannedQuery) tries to do this for individual
+queries, and [Rose::DBx::CannedQuery::Glycosylated](https://metacpan.org/pod/Rose%3A%3ADBx%3A%3ACannedQuery%3A%3AGlycosylated) abstracts away a
 bit more repetitive code dealing with logging.  But these helpers
 still require a certain amount of work to define the data source,
 connect logging, and so forth.  As you use them you'll probably find
@@ -74,13 +83,13 @@ Depending on your needs, you may find it most helpful to use
 `Rose::DBx::Role::QueryCannery` in either of two ways:
 
 - For more straightforward cases, you can just compose
-[Rose::DBx::Role::QueryCannery](https://metacpan.org/pod/Rose::DBx::Role::QueryCannery) into your application or analytic class.
+[Rose::DBx::Role::QueryCannery](https://metacpan.org/pod/Rose%3A%3ADBx%3A%3ARole%3A%3AQueryCannery) into your application or analytic class.
 You tell `Rose::DBx::Role::QueryCannery` at composition
 time about your data source, and it will set up the cannery
 appropriately.
 - For more complex applications where the cannery might be used in
 different places, or if you find yourself using the same database in
-multiple applications, you can use [Rose::DBx::Role::QueryCannery](https://metacpan.org/pod/Rose::DBx::Role::QueryCannery) as
+multiple applications, you can use [Rose::DBx::Role::QueryCannery](https://metacpan.org/pod/Rose%3A%3ADBx%3A%3ARole%3A%3AQueryCannery) as
 the foundation for a reusable database-specific cannery.  Depending on
 your preferences, you might accomplish this by writing a simple
 (non-parameterized) cannery role:
@@ -90,7 +99,7 @@ your preferences, you might accomplish this by writing a simple
         use Rose::DBx::Role::QueryCannery;
         use Moo::Role 2;
 
-        Rose::DBx::Role::QueryCannery->apply(
+        Rose::DBx::Role::QueryCannery->apply_roles_to_target(
           query_class => 'Rose::DBx::CannedQuery::Glycosylated',
           rdb_class => 'My::RDB',
           rdb_params => { domain => $ENV{MYDB_TESTING_DOMAIN} || 'production',
@@ -114,7 +123,7 @@ your preferences, you might accomplish this by writing a simple
 
     Alternatively, if you prefer to separate query construction from other
     code, you can build a factory class that composes
-    [Rose::DBx::Role::QueryCannery](https://metacpan.org/pod/Rose::DBx::Role::QueryCannery) with appropriate parameters:
+    [Rose::DBx::Role::QueryCannery](https://metacpan.org/pod/Rose%3A%3ADBx%3A%3ARole%3A%3AQueryCannery) with appropriate parameters:
 
         package My::DB::CanningFactory;
 
@@ -130,7 +139,7 @@ your preferences, you might accomplish this by writing a simple
         class_has 'rdb'     => ( ... );
         sub _build_rdb { ... }
 
-        Rose::DBx::Role::QueryCannery->apply(
+        Rose::DBx::Role::QueryCannery->apply_roles_to_target(
           query_class => 'Rose::DBx::CannedQuery::Glycosylated',
           rdb => __PACKAGE__->rdb );
 
@@ -164,48 +173,48 @@ your preferences, you might accomplish this by writing a simple
 
 You tell `Rose::DBx::Role::QueryCannery` how to set up the cannery by
 specifying as many of these parameters as you need at composition time
-(using either the ["apply" in MooX::Role::Parameterized](https://metacpan.org/pod/MooX::Role::Parameterized#apply) method or the
-[MooX::Role::Parameterized::With](https://metacpan.org/pod/MooX::Role::Parameterized::With) class):
+(using either the ["apply\_roles\_to\_target" in MooX::Role::Parameterized](https://metacpan.org/pod/MooX%3A%3ARole%3A%3AParameterized#apply_roles_to_target) method or the
+[MooX::Role::Parameterized::With](https://metacpan.org/pod/MooX%3A%3ARole%3A%3AParameterized%3A%3AWith) class):
 
 - query\_class
 
     This is the class that will actually construct and manage the canned
     queries. You may specify any class whose query management is
-    compatible with [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose::DBx::CannedQuery).  If you want automatic
+    compatible with [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose%3A%3ADBx%3A%3ACannedQuery).  If you want automatic
     logging, then the class needs to be compatible with
-    [Rose::DBx::CannedQuery::Glycosylated](https://metacpan.org/pod/Rose::DBx::CannedQuery::Glycosylated).
+    [Rose::DBx::CannedQuery::Glycosylated](https://metacpan.org/pod/Rose%3A%3ADBx%3A%3ACannedQuery%3A%3AGlycosylated).
 
     If you don't specify this class, and
-    [Rose::DBx::CannedQuery::Glycosylated](https://metacpan.org/pod/Rose::DBx::CannedQuery::Glycosylated) can be loaded, it is used by
-    default.  If not, then [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose::DBx::CannedQuery) is tried.  If that
+    [Rose::DBx::CannedQuery::Glycosylated](https://metacpan.org/pod/Rose%3A%3ADBx%3A%3ACannedQuery%3A%3AGlycosylated) can be loaded, it is used by
+    default.  If not, then [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose%3A%3ADBx%3A%3ACannedQuery) is tried.  If that
     fails, an exception is thrown.
 
     If the ["query\_class"](#query_class) can respond to both `verbose` and `logger`
     methods (i.e. is compatible with the logging interface of
-    [Rose::DBx::CannedQuery::Glycosylated](https://metacpan.org/pod/Rose::DBx::CannedQuery::Glycosylated)), then the cannery introspects
+    [Rose::DBx::CannedQuery::Glycosylated](https://metacpan.org/pod/Rose%3A%3ADBx%3A%3ACannedQuery%3A%3AGlycosylated)), then the cannery introspects
     your class for `verbose` and `logger` values, and uses them to
     create canned queries.
 
 - rdb
 
-    This is a [Rose::DB](https://metacpan.org/pod/Rose::DB)-derived database handle used to manage the
-    database connection; see [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose::DBx::CannedQuery) for details.  There
+    This is a [Rose::DB](https://metacpan.org/pod/Rose%3A%3ADB)-derived database handle used to manage the
+    database connection; see [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose%3A%3ADBx%3A%3ACannedQuery) for details.  There
     is no default value.
 
-    As with [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose::DBx::CannedQuery), you may specify either ["rdb"](#rdb) or
+    As with [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose%3A%3ADBx%3A%3ACannedQuery), you may specify either ["rdb"](#rdb) or
     ["rdb\_class"](#rdb_class) and ["rdb\_params"](#rdb_params) when composing
-    [Rose::DBx::Role::QueryCannery](https://metacpan.org/pod/Rose::DBx::Role::QueryCannery).
+    [Rose::DBx::Role::QueryCannery](https://metacpan.org/pod/Rose%3A%3ADBx%3A%3ARole%3A%3AQueryCannery).
 
 - rdb\_class
 
-    This is the name of the [Rose::DB](https://metacpan.org/pod/Rose::DB)-derived class that makes the
-    database connection; see [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose::DBx::CannedQuery) for details.  There
+    This is the name of the [Rose::DB](https://metacpan.org/pod/Rose%3A%3ADB)-derived class that makes the
+    database connection; see [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose%3A%3ADBx%3A%3ACannedQuery) for details.  There
     is no default value.
 
 - rdb\_params
 
     This is a hash reference containing the data source information for
-    ["rdb\_class"](#rdb_class); again, see [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose::DBx::CannedQuery) for details.
+    ["rdb\_class"](#rdb_class); again, see [Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose%3A%3ADBx%3A%3ACannedQuery) for details.
     There is no default value.
 
 # METHODS
@@ -232,12 +241,12 @@ None.
 
 # SEE ALSO
 
-[Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose::DBx::CannedQuery), [Rose::DBx::CannedQuery::Glycosylated](https://metacpan.org/pod/Rose::DBx::CannedQuery::Glycosylated) for
+[Rose::DBx::CannedQuery](https://metacpan.org/pod/Rose%3A%3ADBx%3A%3ACannedQuery), [Rose::DBx::CannedQuery::Glycosylated](https://metacpan.org/pod/Rose%3A%3ADBx%3A%3ACannedQuery%3A%3AGlycosylated) for
 canned queries.
 
-[MooX::Role::Chatty](https://metacpan.org/pod/MooX::Role::Chatty) for a simple way to set your class up with logging.
+[MooX::Role::Chatty](https://metacpan.org/pod/MooX%3A%3ARole%3A%3AChatty) for a simple way to set your class up with logging.
 
-[Rose::DBx::MoreConfig](https://metacpan.org/pod/Rose::DBx::MoreConfig) or [Rose::DB](https://metacpan.org/pod/Rose::DB) for a database connection
+[Rose::DBx::MoreConfig](https://metacpan.org/pod/Rose%3A%3ADBx%3A%3AMoreConfig) or [Rose::DB](https://metacpan.org/pod/Rose%3A%3ADB) for a database connection
 class.
 
 # DIAGNOSTICS

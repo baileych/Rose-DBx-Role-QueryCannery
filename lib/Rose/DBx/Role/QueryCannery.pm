@@ -22,7 +22,7 @@ sub _load_if {
 use Moo::Role 2;
 
 role {
-  my $params = shift;
+  my ($params, $mop) = @_;
 
   my($canning_class, %datasource);
   
@@ -66,8 +66,9 @@ role {
     return $canning_class->$constructor(%merged_args);
   };
 
-  method 'build_query' => sub { $create_query->( 'new',           @_ ); };
-  method 'get_query'   => sub { $create_query->( 'new_or_cached', @_ ); };
+  $mop->method('build_query' => sub { $create_query->( 'new',           @_ ); });
+  
+  $mop->method('get_query'   => sub { $create_query->( 'new_or_cached', @_ ); });
 
 };
 
@@ -90,13 +91,22 @@ Rose::DBx::Role::QueryCannery - Streamline canned query generation
 
   # Grab the cannery machinery
   use Rose::DBx::Role::QueryCannery;
+  use MooseX::Role::Parameterized::With; # override with to include parameterized roles and parameters
 
-  # Set up cannery to create queries using specified Rose::DB
-  # connection info; will automatically try to load rdb_class
-  # and a default canned query class
-  Rose::DBx::Role::QueryCannery->apply(
-    { rdb_class => 'My::RDB::Class',
-      rdb_params => { type => 'my_db', domain => $server } } );
+  with
+    # Give ourselves verbosity and logging attributes (optional) 
+    'MooX::Role::Chatty',
+    # Set up cannery to create queries using specified Rose::DB
+    # connection info; will automatically try to load rdb_class
+    # and a default canned query class
+    'Rose::DBx::Role::QueryCannery' => {
+    rdb_class => 'My::RDB::Class',
+    rdb_params => { type => 'my_db', domain => $server },
+  };
+  # this is the old way
+  # Rose::DBx::Role::QueryCannery->apply_roles_to_target(
+  #  { rdb_class => 'My::RDB::Class',
+  #    rdb_params => { type => 'my_db', domain => $server } } );
 
   ...
 
@@ -174,7 +184,7 @@ your preferences, you might accomplish this by writing a simple
   use Rose::DBx::Role::QueryCannery;
   use Moo::Role 2;
 
-  Rose::DBx::Role::QueryCannery->apply(
+  Rose::DBx::Role::QueryCannery->apply_roles_to_target(
     query_class => 'Rose::DBx::CannedQuery::Glycosylated',
     rdb_class => 'My::RDB',
     rdb_params => { domain => $ENV{MYDB_TESTING_DOMAIN} || 'production',
@@ -214,7 +224,7 @@ L<Rose::DBx::Role::QueryCannery> with appropriate parameters:
   class_has 'rdb'     => ( ... );
   sub _build_rdb { ... }
 
-  Rose::DBx::Role::QueryCannery->apply(
+  Rose::DBx::Role::QueryCannery->apply_roles_to_target(
     query_class => 'Rose::DBx::CannedQuery::Glycosylated',
     rdb => __PACKAGE__->rdb );
 
@@ -250,7 +260,7 @@ L<Rose::DBx::Role::QueryCannery> with appropriate parameters:
 
 You tell F<Rose::DBx::Role::QueryCannery> how to set up the cannery by
 specifying as many of these parameters as you need at composition time
-(using either the L<MooX::Role::Parameterized/apply> method or the
+(using either the L<MooX::Role::Parameterized/apply_roles_to_target> method or the
 L<MooX::Role::Parameterized::With> class):
 
 =over 4
